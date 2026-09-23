@@ -11,6 +11,7 @@
 | 模块 | 内容 | 硬件依赖 |
 |------|------|---------|
 | `ST7735/` | ST7735 彩屏驱动（C++17，完整图形 API） | SPI + 4 根 GPIO |
+| `BUTTON/` | EXTI 按键驱动（单击/双击/长按 + 长按阈值可调 + 充能） | 1 根带 EXTI 的 GPIO |
 | `FontLib/` | 字符级编译字库（驱动无关） | 无 |
 
 ## ⚠️ 架构：库共享 —— 像素数据在库，编译清单在工程
@@ -100,6 +101,10 @@ LoveFinderLibForPY32_LL/
 │   ├── st7735.cpp        # 实现：初始化 / 字符 / 图形 / SPI
 │   ├── icons.c / icons.h # 图标库（数据，保持 C）
 │   └── README.md
+├── BUTTON/
+│   ├── BUTTON.hpp        # 宏默认值 + 平台移植点 + Button 类
+│   ├── BUTTON.cpp        # 实现：EXTI 配置 / 状态机 / 充能 / 中断分发
+│   └── README.md
 ├── FontLib/              # ★ 字形像素数据（所有工程共享的唯一副本）
 │   ├── font.h            # 固定接口：字体名册 + 查表 API（生成物）
 │   ├── font_data.cpp     # 全部字形的逐字符数组 + 查表（生成物）
@@ -133,10 +138,12 @@ python tools\gen_fontlib.py        # 从 FontLib/font_manifest.json 生成
 ## 快速上手（Keil 为例）
 
 1. 把 `ST7735/st7735.cpp`、`ST7735/icons.c`、`FontLib/font_data.cpp` 加入工程
+   （要用按键再加 `BUTTON/BUTTON.cpp`）
    - `.cpp` 的 `<FileType>` 必须是 **8**（C++），`.c` 是 1
    - `font_data.cpp` 指向 **库里的那一份**（所有工程共享），**不要**往工程里复制
 2. Include 路径加三处：`<工程>/LoveFinderLib/FontLib`（编译清单）、
    库的 `FontLib/`（像素与接口）、库的 `ST7735/`（驱动）
+   （要用按键再加库的 `BUTTON/`）
 3. 工程 C/C++ 选项加 **`-Wno-register`**（厂商 LL 头用了 C++17 已删除的
    `register` 关键字），并把 `<v6LangP>` 设为 **9**（`-std=gnu++17`）
 4. 在 `<工程>/LoveFinderLib/FontLib/font_config.hpp` 里声明要编译哪些字
@@ -150,6 +157,22 @@ ST7735_FillScreen(ST7735::BLACK);
 ST7735_WriteString(40, 12, "Hello", Font_7x10, ST7735::WHITE, ST7735::BLACK);
 ST7735_FillCircle(80, 40, 20, ST7735::GREEN);
 ST7735_DrawRoundRect(10, 60, 60, 16, 5, ST7735::CYAN);
+```
+
+要用按键：
+
+```cpp
+#include "BUTTON.hpp"
+
+LoveFinderLib::Button btn;
+btn.init();                                       // 板级 KEY_INT(PA1)，自动配 EXTI + NVIC
+
+// 主循环 (1-10ms 一次)
+LoveFinderLib::e_BUTTON_Event evt = btn.update();
+btn.setLongPressMs(1500);                         // 运行期改长按阈值
+
+// 工程的 EXTI 中断里分发 (详见 BUTTON/README.md)
+void EXTI0_1_IRQHandler(void) { LoveFinderLib::Button::dispatchExti(LL_EXTI_LINE_1); }
 ```
 
 ## 平台移植点
